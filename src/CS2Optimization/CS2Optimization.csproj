@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The game runs Mono with .NET Standard 2.1. -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>CS2Optimization</AssemblyName>
+    <RootNamespace>CS2Optimization</RootNamespace>
+    <Version>0.1.0</Version>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- The game ships its own System.* facades whose versions differ from the reference pack;
+         Mono unifies them at runtime, so this build-time noise is not actionable. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+
+    <!-- Game assemblies come from the player's own install and are never copied or shipped.
+         Override if Steam lives elsewhere:
+           dotnet build -c Release -p:GameManagedDir="D:\...\Cities Skylines II\Cities2_Data\Managed" -->
+    <GameManagedDir Condition="'$(GameManagedDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Cities Skylines II\Cities2_Data\Managed</GameManagedDir>
+  </PropertyGroup>
+
+  <!-- Core is compiled into this assembly rather than shipped as a second DLL, so the game only
+       has one assembly to load and there is nothing to resolve at runtime. The Core project
+       itself stays separate so its tests run without the game. -->
+  <ItemGroup>
+    <Compile Include="..\CS2Optimization.Core\**\*.cs"
+             Exclude="..\CS2Optimization.Core\bin\**;..\CS2Optimization.Core\obj\**"
+             Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <GameReference Include="Game;
+                            Unity.Entities;
+                            Unity.Collections;
+                            Unity.Mathematics;
+                            UnityEngine.CoreModule;
+                            Unity.RenderPipelines.Core.Runtime;
+                            Unity.RenderPipelines.HighDefinition.Runtime" />
+    <Reference Include="@(GameReference)">
+      <HintPath>$(GameManagedDir)\%(Identity).dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Colossal.* is split across several assemblies (logging, settings, localisation,
+         serialisation); take them all rather than guess which one hosts each type. -->
+    <Reference Include="$(GameManagedDir)\Colossal.*.dll">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="RequireGameAssemblies" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(GameManagedDir)\Game.dll')"
+           Text="Game.dll not found under '$(GameManagedDir)'. Pass -p:GameManagedDir=&quot;...\Cities Skylines II\Cities2_Data\Managed&quot;." />
+    <Error Condition="!Exists('$(GameManagedDir)\Unity.RenderPipelines.HighDefinition.Runtime.dll')"
+           Text="HDRP runtime not found under '$(GameManagedDir)'. The shadow feature needs the game's own install, not the reference ZIP." />
+  </Target>
+
+  <!-- Guard: the output must contain this mod only, never a game or Unity assembly. -->
+  <Target Name="RejectGameAssembliesInOutput" AfterTargets="Build">
+    <ItemGroup>
+      <_ShippedDll Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll" />
+    </ItemGroup>
+    <Error Condition="'@(_ShippedDll)' != ''"
+           Text="Unexpected assemblies in the mod output (must not be redistributed): @(_ShippedDll)" />
+  </Target>
+
+</Project>

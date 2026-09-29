@@ -2,7 +2,7 @@ name: Core tests
 
 on:
   push:
-    branches: ["feature/optimization-task-1-core-policy"]
+    branches: ["main"]
   pull_request:
   workflow_dispatch:
 

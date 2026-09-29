@@ -105,6 +105,63 @@ public sealed class EffectiveProfilePolicyTests
         Assert.Equal(0, values.propLodOffset);
     }
 
+    [Fact]
+    public void SwitchingToCustom_WhileGameShadowsAreOff_KeepsTheRequestedShadowLimit()
+    {
+        var current = Resolve(Mode.Auto, shadowsEnabled: false);
+
+        var values = EffectiveProfilePolicy.ToCustom(current);
+
+        Assert.Equal(300, values.shadowMetres);
+        Assert.Equal(6, values.propLodOffset);
+    }
+
+    [Fact]
+    public void SwitchingToCustom_FromOff_CopiesUnchanged()
+    {
+        var values = EffectiveProfilePolicy.ToCustom(Resolve(Mode.Off));
+
+        Assert.Equal(0, values.shadowMetres);
+        Assert.Equal(0, values.propLodOffset);
+    }
+
+    [Fact]
+    public void StoppedProfile_ReportsWhatWasRequestedButAppliesNothing()
+    {
+        var profile = Resolve(Mode.Custom, customShadow: 175, customOffset: 12, hasSaver: true);
+
+        Assert.Equal(175, profile.RequestedShadowMetres);
+        Assert.Equal(12, profile.RequestedPropLodOffset);
+        Assert.Equal(0, profile.ShadowRequestWhenShadowsOn);
+    }
+
+    [Fact]
+    public void ShadowRequest_IgnoresTheGameShadowSwitch_SoTheControllerCanReactLater()
+    {
+        var profile = Resolve(Mode.Auto, shadowsEnabled: false);
+
+        Assert.Equal(0, profile.ShadowMetres);
+        Assert.Equal(300, profile.ShadowRequestWhenShadowsOn);
+    }
+
+    [Fact]
+    public void ConflictOutranksUnsupportedGame()
+    {
+        var profile = Resolve(Mode.Auto, hasSaver: true, supportedGame: false);
+
+        Assert.Equal(StopReason.Cs2SaverConflict, profile.StopReason);
+    }
+
+    [Fact]
+    public void Off_WithCs2Saver_StillReportsTheConflict()
+    {
+        var profile = Resolve(Mode.Off, hasSaver: true);
+
+        Assert.Equal(0, profile.ShadowMetres);
+        Assert.Equal(0, profile.PropLodOffset);
+        Assert.Equal(StopReason.Cs2SaverConflict, profile.StopReason);
+    }
+
     private static EffectiveProfile Resolve(
         Mode mode,
         int customShadow = 0,
