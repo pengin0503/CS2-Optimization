@@ -88,6 +88,63 @@ namespace CS2Optimization.Core
             return true;
         }
 
+        /// <summary>Outcome of <see cref="RestoreAll"/>.</summary>
+        public readonly struct RestoreResult
+        {
+            public RestoreResult(int restored, int missing, int changedElsewhere)
+            {
+                Restored = restored;
+                Missing = missing;
+                ChangedElsewhere = changedElsewhere;
+            }
+
+            /// <summary>Originals written back.</summary>
+            public int Restored { get; }
+
+            /// <summary>Ids that no longer exist; dropped without writing.</summary>
+            public int Missing { get; }
+
+            /// <summary>Values someone else changed since; left as they are.</summary>
+            public int ChangedElsewhere { get; }
+        }
+
+        /// <summary>
+        /// Writes every original back that can safely be written. <paramref name="read"/> returns
+        /// null when the id no longer exists; such entries are dropped without writing. Entries
+        /// whose value was changed by someone else since are left untouched.
+        /// </summary>
+        public RestoreResult RestoreAll(System.Func<TId, int?> read, System.Action<TId, int> write)
+        {
+            var restored = 0;
+            var missing = 0;
+            var changed = 0;
+            var ids = new List<TId>(m_Entries.Keys);
+
+            foreach (var id in ids)
+            {
+                var current = read(id);
+                if (current == null)
+                {
+                    m_Entries.Remove(id);
+                    missing++;
+                    continue;
+                }
+
+                if (!TryRestore(id, current.Value, out var original))
+                {
+                    changed++;
+                    continue;
+                }
+
+                if (original == current.Value) continue;
+
+                write(id, original);
+                restored++;
+            }
+
+            return new RestoreResult(restored, missing, changed);
+        }
+
         /// <summary>Stops tracking an id, e.g. when its entity no longer exists.</summary>
         public void Forget(TId id) => m_Entries.Remove(id);
 
