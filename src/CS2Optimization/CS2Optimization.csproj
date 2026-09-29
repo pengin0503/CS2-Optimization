@@ -64,4 +64,42 @@
            Text="Unexpected assemblies in the mod output (must not be redistributed): @(_ShippedDll)" />
   </Target>
 
+  <!-- Release ZIP:  dotnet build -c Release -t:Package -p:GameManagedDir="..."
+       Stages exactly the files below, zips them, then unpacks the ZIP again and fails if it
+       holds anything else (in particular any game, Unity or Write Everywhere assembly). -->
+  <PropertyGroup>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../..'))/</RepoRoot>
+    <PackageRoot>$(RepoRoot)artifacts/</PackageRoot>
+    <PackageStage>$(PackageRoot)stage/CS2Optimization/</PackageStage>
+    <PackageCheck>$(PackageRoot)check/</PackageCheck>
+    <PackageZip>$(PackageRoot)CS2Optimization-$(Version).zip</PackageZip>
+  </PropertyGroup>
+
+  <Target Name="Package" DependsOnTargets="Build">
+    <ItemGroup>
+      <_PackageFile Include="$(OutDir)$(AssemblyName).dll" />
+      <_PackageFile Include="$(RepoRoot)LICENSE" />
+      <_PackageFile Include="$(RepoRoot)THIRD_PARTY_NOTICES.md" />
+      <_PackageFile Include="$(RepoRoot)README.md" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(_PackageFile.FullPath)')" Text="Missing package input: %(_PackageFile.FullPath)" />
+
+    <RemoveDir Directories="$(PackageRoot)stage;$(PackageCheck)" />
+    <Delete Files="$(PackageZip)" />
+    <Copy SourceFiles="@(_PackageFile)" DestinationFolder="$(PackageStage)" />
+    <ZipDirectory SourceDirectory="$(PackageRoot)stage" DestinationFile="$(PackageZip)" Overwrite="true" />
+
+    <Unzip SourceFiles="$(PackageZip)" DestinationFolder="$(PackageCheck)" />
+    <ItemGroup>
+      <_Packed Include="$(PackageCheck)**/*" />
+      <_Expected Include="$(PackageCheck)CS2Optimization/%(_PackageFile.Filename)%(_PackageFile.Extension)" />
+      <_Unexpected Include="@(_Packed)" Exclude="@(_Expected)" />
+      <_Absent Include="@(_Expected)" Condition="!Exists('%(FullPath)')" />
+    </ItemGroup>
+    <Error Condition="'@(_Unexpected)' != ''" Text="Package contains unexpected files: @(_Unexpected)" />
+    <Error Condition="'@(_Absent)' != ''" Text="Package is missing: @(_Absent)" />
+    <RemoveDir Directories="$(PackageCheck)" />
+    <Message Importance="high" Text="Package: $(PackageZip) (verified: @(_Expected->'%(Filename)%(Extension)', ', '))" />
+  </Target>
+
 </Project>

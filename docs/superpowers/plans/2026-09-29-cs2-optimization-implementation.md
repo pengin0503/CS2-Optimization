@@ -10,6 +10,23 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-29-cs2-optimization-design.md`
 
+## 進捗（2026-09-29 時点）
+
+| 範囲 | 状態 |
+|---|---|
+| Task 1–2（方針・元値管理） | 実装・テスト済み |
+| Task 3–5 の純粋ロジック（`PrefabCategoryPolicy`、`LodLedger.RestoreAll`、`ShadowOverrideState`、版・競合判定、Custom切替、状態表示） | 実装・テスト済み（91件）。主要ロジックはミューテーション確認済み |
+| Task 3–5 のゲーム側（`PrefabLodSystem`、`ShadowDistanceSystem`、`Mod`/`Settings`/`Locale*`） | 実装済み。**実ゲームDLLでのビルドは未実施**（作業環境にゲームDLLがなく、シグネチャのスタブに対してのみコンパイル確認） |
+| Task 6（README、THIRD_PARTY_NOTICES、ZIP生成と内容検査） | 実装済み。ZIP検査はスタブビルドで動作確認済み |
+| ゲーム内確認・比較計測 | **未実施**。`docs/benchmarks/1.6.0f1.md` に記録欄のみ |
+
+計画からの変更点:
+
+- Core は別DLLにせず、ソースをMODアセンブリへ同梱してビルドする（ゲームがロードするのは1つのDLLのみ）。Coreプロジェクトとテストは独立したまま。
+- 既存オブジェクトの `CullingInfo.m_MinLod` を変更時に一度だけ再設定する。Prefabの値だけではゲームが再シードするまで既存の小物に反映されず、`Off` が即時に戻らないため（Cs2Saver のコメントに記載の挙動に基づく）。
+- 影は「ゲームが既に要求値以下の距離なら上書きしない」（制限であって延長しない）。ゲームの影の有効状態はリフレクションで読み、失敗時は太陽光の影設定で代替し、不明なら影機能を無効にする。
+- `ToCustom` は一時的な停止（影オフ・競合）で0にされる前の「要求値」をコピーする。
+
 ## Global Constraints
 
 - 実装先は `pengin0503/CS2-Optimization`。初回は `main` から作業ブランチを作る。ゲーム版 `1.6.0f1` を初期対応範囲とし、未知の版で描画変更を行わない。
