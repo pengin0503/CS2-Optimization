@@ -6,12 +6,13 @@ namespace CS2Optimization.Core.Tests;
 public sealed class StartupPolicyTests
 {
     [Theory]
-    [InlineData("1.6.0f1", true)]
-    [InlineData(" 1.6.0f1 ", true)]
-    [InlineData("1.6.0f2", false)]
-    [InlineData("1.6.0", false)]
-    [InlineData("1.6.0f10", false)]
-    [InlineData("1.5.3f1", false)]
+    [InlineData("1.6.2f1", true)]
+    [InlineData(" 1.6.2f1 ", true)]
+    [InlineData("1.6.0f1", false)]
+    [InlineData("1.6.2f2", false)]
+    [InlineData("1.6.2", false)]
+    [InlineData("1.6.2f10", false)]
+    [InlineData("1.6.2f1 (767.21d1)", false)]
     [InlineData("", false)]
     [InlineData(null, false)]
     public void OnlyVerifiedGameVersionsAreSupported(string? version, bool expected)

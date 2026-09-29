@@ -3,7 +3,8 @@ namespace CS2Optimization.Core
     /// <summary>Game builds this mod has been checked against. Anything else: change nothing.</summary>
     public static class GameVersionPolicy
     {
-        public static readonly string[] Supported = { "1.6.0f1" };
+        /// <summary>Compared with <c>Game.Version.current.shortVersion</c>, e.g. "1.6.2f1".</summary>
+        public static readonly string[] Supported = { "1.6.2f1" };
 
         public static bool IsSupported(string? version)
         {

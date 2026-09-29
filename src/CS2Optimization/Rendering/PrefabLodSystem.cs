@@ -2,12 +2,10 @@
 // Copyright (C) 2026 NSPX. Licensed under GPL-3.0; see LICENSE and THIRD_PARTY_NOTICES.md.
 
 using System;
-using System.Collections.Generic;
 using Colossal.Serialization.Entities;
 using CS2Optimization.Core;
 using Game;
 using Game.Prefabs;
-using Game.Rendering;
 using Unity.Collections;
 using Unity.Entities;
 
@@ -19,17 +17,22 @@ namespace CS2Optimization.Rendering
     /// (<c>RenderingUtils.CalculateDistanceFactor</c> is <c>2^((128 - lod) / 6)</c>). Buildings,
     /// trees and plants are never touched, see <see cref="PrefabCategoryPolicy"/>.
     ///
-    /// <para><b>Prefabs, not instances.</b> The game re-seeds each instance's
-    /// <c>CullingInfo.m_MinLod</c> from its prefab whenever the instance is updated, so writing
-    /// the prefab is what makes the change stick. Instances that already exist are only re-seeded
-    /// by the game on an update, though, so after every change this system re-seeds them once
-    /// itself (see <see cref="ReseedInstances"/>). That is what makes Off take effect immediately
-    /// instead of after a reload. It runs on changes only, never per frame.</para>
+    /// <para><b>When it becomes visible.</b> Static objects are culled through the object search
+    /// tree, which copies the prefab's floor when an object is inserted
+    /// (<c>Game.Objects.SearchSystem.UpdateSearchTreeJob</c>); objects are only re-inserted when
+    /// they are created, updated or the city is loaded. So the prefab value set here applies to
+    /// every city loaded afterwards and to newly placed props immediately, while props already
+    /// placed keep their indexed value until the city is reloaded. Forcing a re-index would mean
+    /// marking every prop <c>Updated</c>, which wakes many unrelated game systems, so it is not
+    /// done; the status line says a reload is pending instead.</para>
     ///
-    /// <para><b>Originals.</b> Every prefab's own value is kept in a <see cref="LodLedger{TId}"/>
-    /// for the current city, so passes never stack, and Off, city exit and mod unload all put the
-    /// game's values back. <c>m_MinLod</c> is derived at prefab initialisation and not serialised,
-    /// so nothing here can reach a save file.</para>
+    /// <para><b>Originals.</b> Every prefab's own value is kept in a <see cref="LodLedger{TId}"/>,
+    /// so passes never stack and Off, failure and mod unload put the game's values back. The
+    /// ledger is not cleared between cities: restoring before a load could leave the next city
+    /// indexed with the original values. Stale entries are safe anyway, because a destroyed
+    /// entity no longer <c>Exists</c> (its version changes on reuse) and a value that no longer
+    /// matches what was applied is recaptured as the new original. <c>m_MinLod</c> is not part of
+    /// <c>ObjectGeometryData.Serialize</c>, so nothing here reaches a save file.</para>
     /// </summary>
     public partial class PrefabLodSystem : GameSystemBase
     {
@@ -39,20 +42,22 @@ namespace CS2Optimization.Rendering
         /// <summary>Prefabs that might be props. Final eligibility is decided per entity by the policy.</summary>
         private EntityQuery m_Candidates;
 
-        /// <summary>Live objects whose culling floor was seeded from a prefab.</summary>
-        private EntityQuery m_Instances;
-
-        private ComponentTypeHandle<CullingInfo> m_CullingInfoType;
-        private ComponentTypeHandle<PrefabRef> m_PrefabRefType;
-
         private int m_Offset;
         private int m_AppliedOffset;
         private bool m_Dirty = true;
         private int m_LastCandidateCount = -1;
         private bool m_Failed;
+        private bool m_InCity;
+        private int m_OffsetAtCityLoad;
 
         /// <summary>Offset in effect on the prefabs this system tracks. 0 = game values.</summary>
         public int AppliedOffset => m_Failed ? 0 : m_AppliedOffset;
+
+        /// <summary>
+        /// The offset changed since the current city loaded, so props already placed still use
+        /// the value they were indexed with.
+        /// </summary>
+        public bool ReloadPending => m_InCity && AppliedOffset != m_OffsetAtCityLoad;
 
         /// <summary>True once the feature has stood down after an error.</summary>
         public bool Failed => m_Failed;
@@ -67,17 +72,7 @@ namespace CS2Optimization.Rendering
         }
 
         /// <summary>Puts every tracked prefab back to its original floor, synchronously.</summary>
-        public void RestoreNow() => Restore(reseedInstances: true);
-
-        /// <summary>Restores and forgets the current city's originals; the next city starts fresh.</summary>
-        public void ResetForNewCity()
-        {
-            // The city being left is about to be unloaded, so its instances need no re-seed.
-            Restore(reseedInstances: false);
-            m_Ledger.Clear();
-            m_Dirty = true;
-            m_LastCandidateCount = -1;
-        }
+        public void RestoreNow() => Restore();
 
         protected override void OnCreate()
         {
@@ -92,13 +87,6 @@ namespace CS2Optimization.Rendering
                     ComponentType.ReadOnly<NetObjectData>(),
                 },
             });
-
-            m_Instances = GetEntityQuery(
-                ComponentType.ReadWrite<CullingInfo>(),
-                ComponentType.ReadOnly<PrefabRef>());
-
-            m_CullingInfoType = GetComponentTypeHandle<CullingInfo>(false);
-            m_PrefabRefType = GetComponentTypeHandle<PrefabRef>(true);
         }
 
         protected override void OnUpdate()
@@ -114,16 +102,15 @@ namespace CS2Optimization.Rendering
             RunPass("new prefabs");
         }
 
-        protected override void OnGamePreload(Purpose purpose, GameMode mode)
-        {
-            base.OnGamePreload(purpose, mode);
-            Guard("city exit", ResetForNewCity);
-        }
-
         protected override void OnGameLoadingComplete(Purpose purpose, GameMode mode)
         {
             base.OnGameLoadingComplete(purpose, mode);
-            m_Dirty = true;
+
+            // Catch any prefab the load created that the count check has not seen yet, then note
+            // the value this city's props were indexed with.
+            RunPass("city load");
+            m_InCity = (mode & GameMode.Game) != 0;
+            m_OffsetAtCityLoad = AppliedOffset;
         }
 
         protected override void OnDestroy()
@@ -143,11 +130,11 @@ namespace CS2Optimization.Rendering
         {
             if (m_Offset == 0)
             {
-                Restore(reseedInstances: true);
+                Restore();
                 return;
             }
 
-            var changes = new Dictionary<Entity, (int from, int to)>();
+            var changed = 0;
             var eligible = 0;
             var entities = m_Candidates.ToEntityArray(Allocator.Temp);
             var geometry = m_Candidates.ToComponentDataArray<ObjectGeometryData>(Allocator.Temp);
@@ -163,7 +150,7 @@ namespace CS2Optimization.Rendering
                     var data = geometry[i];
                     if (!m_Ledger.Plan(entity, data.m_MinLod, m_Offset, out var write)) continue;
 
-                    changes[entity] = (data.m_MinLod, write);
+                    changed++;
                     data.m_MinLod = write;
                     EntityManager.SetComponentData(entity, data);
                 }
@@ -175,13 +162,10 @@ namespace CS2Optimization.Rendering
             }
 
             m_AppliedOffset = m_Offset;
-            if (changes.Count == 0) return;
-
-            var reseeded = ReseedInstances(changes);
-            Mod.Log.Info($"Prop LOD +{m_Offset}: {eligible} eligible prefabs, {changes.Count} updated, {reseeded} live objects re-seeded.");
+            if (changed > 0) Mod.Log.Info($"Prop LOD +{m_Offset}: {eligible} eligible prefabs, {changed} updated.");
         }
 
-        private void Restore(bool reseedInstances)
+        private void Restore()
         {
             if (m_Ledger.Count == 0)
             {
@@ -190,7 +174,6 @@ namespace CS2Optimization.Rendering
             }
 
             var em = EntityManager;
-            var changes = new Dictionary<Entity, (int from, int to)>();
 
             var result = m_Ledger.RestoreAll(
                 entity => em.Exists(entity) && em.HasComponent<ObjectGeometryData>(entity)
@@ -199,7 +182,6 @@ namespace CS2Optimization.Rendering
                 (entity, original) =>
                 {
                     var data = em.GetComponentData<ObjectGeometryData>(entity);
-                    changes[entity] = (data.m_MinLod, original);
                     data.m_MinLod = original;
                     em.SetComponentData(entity, data);
                 });
@@ -214,10 +196,7 @@ namespace CS2Optimization.Rendering
                              $"and {result.ChangedElsewhere} whose value was changed by something else.");
             }
 
-            if (result.Restored == 0) return;
-
-            var reseeded = reseedInstances ? ReseedInstances(changes) : 0;
-            Mod.Log.Info($"Prop LOD restored: {result.Restored} prefabs, {reseeded} live objects re-seeded.");
+            if (result.Restored > 0) Mod.Log.Info($"Prop LOD restored: {result.Restored} prefabs.");
         }
 
         private bool IsEligible(Entity prefab)
@@ -229,50 +208,6 @@ namespace CS2Optimization.Rendering
                 em.HasComponent<BuildingData>(prefab),
                 em.HasComponent<TreeData>(prefab),
                 em.HasComponent<PlantData>(prefab));
-        }
-
-        /// <summary>
-        /// Does for existing objects what the game does when it re-seeds one: copies the prefab's
-        /// floor into <c>CullingInfo.m_MinLod</c>. Only objects still holding the prefab's
-        /// previous floor are changed, so any value the game derived differently is left alone.
-        /// Main thread, once per change.
-        /// </summary>
-        private int ReseedInstances(Dictionary<Entity, (int from, int to)> changes)
-        {
-            if (changes.Count == 0 || m_Instances.IsEmptyIgnoreFilter) return 0;
-
-            m_Instances.CompleteDependency();
-            m_CullingInfoType.Update(this);
-            m_PrefabRefType.Update(this);
-
-            var reseeded = 0;
-            var chunks = m_Instances.ToArchetypeChunkArray(Allocator.Temp);
-            try
-            {
-                foreach (var chunk in chunks)
-                {
-                    var prefabs = chunk.GetNativeArray(ref m_PrefabRefType);
-                    var infos = chunk.GetNativeArray(ref m_CullingInfoType);
-
-                    for (var i = 0; i < prefabs.Length; i++)
-                    {
-                        if (!changes.TryGetValue(prefabs[i].m_Prefab, out var change)) continue;
-
-                        var info = infos[i];
-                        if (info.m_MinLod != change.from) continue;
-
-                        info.m_MinLod = (byte)change.to;
-                        infos[i] = info;
-                        reseeded++;
-                    }
-                }
-            }
-            finally
-            {
-                chunks.Dispose();
-            }
-
-            return reseeded;
         }
 
         private void Guard(string what, Action action)
@@ -289,7 +224,7 @@ namespace CS2Optimization.Rendering
                 // Put back whatever can still be put back from the originals already captured.
                 try
                 {
-                    Restore(reseedInstances: false);
+                    Restore();
                 }
                 catch (Exception restoreEx)
                 {

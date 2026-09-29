@@ -58,6 +58,8 @@ namespace CS2Optimization
                 GameShadowsEnabled = m_Shadows?.GameShadowsEnabled,
                 RequestedShadowMetres = m_Profile.RequestedShadowMetres,
                 AppliedShadowMetres = m_Shadows?.AppliedMetres,
+                GameShadowMetres = m_Shadows?.GameMetres,
+                PropReloadPending = m_Props?.ReloadPending ?? false,
                 RequestedPropLodOffset = m_Profile.RequestedPropLodOffset,
                 AppliedPropLodOffset = m_Props?.AppliedOffset ?? 0,
                 ShadowFeatureFailed = m_Shadows == null || m_Shadows.Failed || !m_ShadowFieldsOk,

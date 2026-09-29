@@ -5,6 +5,7 @@ using CS2Optimization.Rendering;
 using Game;
 using Game.Modding;
 using Game.Prefabs;
+using Game.Rendering;
 using Game.SceneFlow;
 
 namespace CS2Optimization
@@ -37,9 +38,9 @@ namespace CS2Optimization
 
             TryRegister("shadow distance", () =>
             {
-                // LateUpdate runs every rendered frame, paused or not, so the options page is
-                // followed even while the simulation is stopped.
-                updateSystem.UpdateAt<ShadowDistanceSystem>(SystemUpdatePhase.LateUpdate);
+                // Right after CameraUpdateSystem, which sets the game's shadow distance for this
+                // frame; both run every rendered frame in PreCulling, paused or not.
+                updateSystem.UpdateAfter<ShadowDistanceSystem, CameraUpdateSystem>(SystemUpdatePhase.PreCulling);
                 m_Shadows = updateSystem.World.GetOrCreateSystemManaged<ShadowDistanceSystem>();
                 m_Shadows.ShadowProbe = GameProbe.GameShadowsEnabled;
             });

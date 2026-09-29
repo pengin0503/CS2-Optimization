@@ -19,9 +19,18 @@ namespace CS2Optimization.Core
         /// <summary>The override actually in effect; null when the game's distance is untouched.</summary>
         public float? AppliedShadowMetres { get; set; }
 
+        /// <summary>The game's own shadow distance this frame, when it could be read.</summary>
+        public float? GameShadowMetres { get; set; }
+
         public int RequestedPropLodOffset { get; set; }
 
         public int AppliedPropLodOffset { get; set; }
+
+        /// <summary>
+        /// The prop offset changed after the city loaded. Static props keep the value they were
+        /// indexed with until the city is loaded again (or the object is rebuilt).
+        /// </summary>
+        public bool PropReloadPending { get; set; }
 
         public bool ShadowFeatureFailed { get; set; }
 
@@ -72,6 +81,12 @@ namespace CS2Optimization.Core
                 sb.Append(s.AppliedShadowMetres.HasValue
                     ? $"{s.AppliedShadowMetres.Value:0} m"
                     : (japanese ? "無変更" : "unchanged"));
+                if (s.GameShadowMetres.HasValue)
+                {
+                    sb.Append(japanese
+                        ? $"（ゲームの現在値 {s.GameShadowMetres.Value:0} m）"
+                        : $" (game currently {s.GameShadowMetres.Value:0} m)");
+                }
             }
 
             sb.Append(japanese ? "　｜　" : "  |  ");
@@ -87,6 +102,12 @@ namespace CS2Optimization.Core
                 sb.Append(Offset(s.RequestedPropLodOffset, japanese));
                 sb.Append(japanese ? " / 適用 " : " / applied ");
                 sb.Append(Offset(s.AppliedPropLodOffset, japanese));
+                if (s.PropReloadPending)
+                {
+                    sb.Append(japanese
+                        ? "（配置済みの小物への反映は都市の再ロード後）"
+                        : " (props already placed update after the city is reloaded)");
+                }
             }
 
             if (s.WriteEverywhere)

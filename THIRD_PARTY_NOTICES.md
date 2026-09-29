@@ -16,10 +16,10 @@ Adapted parts (each file carries a notice at the top):
 | `src/CS2Optimization/CS2Optimization.csproj` | `src/Cs2Saver.Mod/Cs2Saver.Mod.csproj` | Referencing game assemblies from the player's install with `Private=false`. |
 
 Changes from the original: only small props are touched (no citizens, vehicles or trees); the
-shadow override no longer forces the sun's shadows, resolution or cascade count and never
-extends a shorter game distance; existing objects are re-seeded once per change so Off is
-immediate; prefab originals are kept per city and restored on city exit, Off, failure and
-unload; colour grading, material changes, CSV logging and presets were not taken.
+shadow limit follows the game's per-frame distance and never lengthens it, keeps the game's
+cascade boundaries inside the limit, and does not force the sun's shadows, resolution or
+cascade count; prefab originals are restored on Off, failure and unload; colour grading,
+material changes, CSV logging and presets were not taken.
 
 Because code under GPL-3.0 is included, this mod as a whole is distributed under GPL-3.0.
 

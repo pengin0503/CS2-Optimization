@@ -45,6 +45,24 @@ public sealed class StatusTextTests
     }
 
     [Fact]
+    public void PropChangeWaitingForReload_IsExplained()
+    {
+        var state = Sample() with { PropReloadPending = true };
+
+        Assert.Contains("再ロード", StatusText.Describe(state, japanese: true));
+        Assert.Contains("reload", StatusText.Describe(state, japanese: false));
+    }
+
+    [Fact]
+    public void GameShadowAlreadyShorter_SaysSo()
+    {
+        var state = Sample() with { AppliedShadowMetres = null, GameShadowMetres = 120f };
+
+        Assert.Contains("120 m", StatusText.Describe(state, japanese: false));
+        Assert.Contains("120 m", StatusText.Describe(state, japanese: true));
+    }
+
+    [Fact]
     public void FeatureFailure_IsShown()
     {
         var state = Sample() with { PropFeatureFailed = true };
@@ -56,7 +74,7 @@ public sealed class StatusTextTests
     private static StatusState Sample() => new StatusState
     {
         StopReason = StopReason.None,
-        GameVersion = "1.6.0f1",
+        GameVersion = "1.6.2f1",
         WriteEverywhere = false,
         GameShadowsEnabled = true,
         RequestedShadowMetres = 300,
